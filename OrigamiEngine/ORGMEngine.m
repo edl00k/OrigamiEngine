@@ -63,64 +63,64 @@
 
 - (void)playUrl:(NSURL *)url withOutputUnitClass:(Class)outputUnitClass {
     if (!outputUnitClass || ![outputUnitClass isSubclassOfClass:[ORGMOutputUnit class]]) {
-
+        
         @throw [NSException exceptionWithName:NSInternalInconsistencyException
                                        reason:NSLocalizedString(@"Output unit should be subclass of ORGMOutputUnit", nil)
                                      userInfo:nil];
     }
-
+    
     if (self.currentState == ORGMEngineStatePlaying) [self stop];
     dispatch_async([ORGMQueues processing_queue], ^{
         self.currentError = nil;
-
+        
         ORGMInputUnit *input = [[ORGMInputUnit alloc] init];
         self.input = input;
         [input release];
-
+        
         if (![_input openWithUrl:url]) {
             self.currentState = ORGMEngineStateError;
             self.currentError = [NSError errorWithDomain:kErrorDomain
                                                     code:ORGMEngineErrorCodesSourceFailed
                                                 userInfo:@{ NSLocalizedDescriptionKey:
-                                                            NSLocalizedString(@"Couldn't open source", nil) }];
+                                                                NSLocalizedString(@"Couldn't open source", nil) }];
             return;
         }
         [_input addObserver:self forKeyPath:@"endOfInput"
                     options:NSKeyValueObservingOptionNew
                     context:nil];
-
+        
         ORGMConverter *converter = [[ORGMConverter alloc] initWithInputUnit:_input];
         self.converter = converter;
         [converter release];
-
+        
         ORGMOutputUnit *output = [[outputUnitClass alloc] initWithConverter:_converter];
         output.outputFormat = _outputFormat;
         self.output = output;
         [output release];
-
+        
         if (![_converter setupWithOutputUnit:_output]) {
             self.currentState = ORGMEngineStateError;
             self.currentError = [NSError errorWithDomain:kErrorDomain
                                                     code:ORGMEngineErrorCodesConverterFailed
                                                 userInfo:@{ NSLocalizedDescriptionKey:
-                                                            NSLocalizedString(@"Couldn't setup converter", nil) }];
+                                                                NSLocalizedString(@"Couldn't setup converter", nil) }];
             return;
         }
-
+        
         [self setCurrentState:ORGMEngineStatePlaying];
         dispatch_source_merge_data([ORGMQueues buffering_source], 1);
     });
 }
 
 - (void)playUrl:(NSURL *)url {
-
-  [self playUrl:url withOutputUnitClass:[ORGMOutputUnit class]];
+    
+    [self playUrl:url withOutputUnitClass:[ORGMOutputUnit class]];
 }
 
 - (void)pause {
     if (_currentState != ORGMEngineStatePlaying)
         return;
-
+    
     [_output pause];
     [self setCurrentState:ORGMEngineStatePaused];
 }
@@ -128,7 +128,7 @@
 - (void)resume {
     if (_currentState != ORGMEngineStatePaused)
         return;
-
+    
     [_output resume];
     [self setCurrentState:ORGMEngineStatePlaying];
 }
@@ -164,6 +164,9 @@
     if (!url) {
         [self stop];
     } else {
+        
+        [_input addObserver:self forKeyPath:@"endOfInput" options:NSKeyValueObservingOptionNew context:nil];
+        
         dispatch_async([ORGMQueues processing_queue], ^{
             if (![_input openWithUrl:url]) {
                 [self stop];
@@ -183,22 +186,21 @@
                        context:(void *)context {
     if (!_delegate)
         return;
-
+    
     if ([keyPath isEqualToString:@"currentState"] &&
         [_delegate respondsToSelector:@selector(engine:didChangeState:)]) {
         dispatch_async(dispatch_get_main_queue(), ^{
             [_delegate engine:self didChangeState:_currentState];
         });
     } else if ([keyPath isEqualToString:@"endOfInput"]) {
-        NSURL *nextUrl = [_delegate engineExpectsNextUrl:self];
-        if (!nextUrl) {
+        
+        [_input removeObserver:self forKeyPath:@"endOfInput" context:nil];
+        
+        BOOL expectNext = [_delegate engineExpectsNextUrl:self];
+        if (!expectNext) {
             [self setCurrentState:ORGMEngineStateStopped];
             return;
         }
-
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self setNextUrl:nextUrl withDataFlush:NO];
-        });
     }
 }
 
